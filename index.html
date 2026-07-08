@@ -369,6 +369,8 @@ var editingPaymentKey = null;
 var purgeArmId = null;
 var purgeArmPayKey = null;
 var pinRemoveArmed = false;
+var closeArmId = null;
+var delArmId = null;
 var armTimer = null;
 var showClosed = false;
 var showHistory = false;
@@ -739,12 +741,12 @@ function render() {
         actions =
           '<div class="actions">' +
           '<button class="btn-text bold" data-act="pay" data-id="' + l.id + '">Выплата</button>' +
-          '<button class="btn-text green bold" data-act="close" data-id="' + l.id + '">Погасил</button>' +
+          '<button class="btn-text green bold" data-act="close" data-id="' + l.id + '">' + (closeArmId === l.id ? 'Точно погасил?' : 'Погасил') + '</button>' +
           '<button class="btn-text" data-act="editloan" data-id="' + l.id + '">Изменить</button>' +
           (isPausedState
             ? '<button class="btn-text" data-act="resumeloan" data-id="' + l.id + '">Возобновить</button>'
             : '<button class="btn-text orange" data-act="pauseloan" data-id="' + l.id + '">Пауза</button>') +
-          '<button class="btn-text red" data-act="del" data-id="' + l.id + '">Удалить</button>' +
+          '<button class="btn-text red" data-act="del" data-id="' + l.id + '">' + (delArmId === l.id ? 'Точно удалить?' : 'Удалить') + '</button>' +
           '</div>';
       }
       return '<div class="loan">' +
@@ -773,7 +775,7 @@ function render() {
         '<span style="font-size:13px;color:var(--green)">✓ ' + fmtDate(l.closedDate) + '</span></div>' +
         '<div class="meta">Выдал ' + fmt(l.principal) + ' ₽ · вернул ' + fmt(paidSum(l)) + ' ₽' +
         (items ? ' · вещами: ' + items : '') + '</div>' +
-        '<button class="btn-text red" data-act="del" data-id="' + l.id + '">Удалить</button>' +
+        '<button class="btn-text red" data-act="del" data-id="' + l.id + '">' + (delArmId === l.id ? 'Точно удалить?' : 'Удалить') + '</button>' +
         '</div>';
     }).join('');
     cList.innerHTML = head + rows;
@@ -834,6 +836,8 @@ document.addEventListener('click', function(e) {
   if (act !== 'purgeloan') purgeArmId = null;
   if (act !== 'purgepayment') purgeArmPayKey = null;
   if (act !== 'pinremove') pinRemoveArmed = false;
+  if (act !== 'close') closeArmId = null;
+  if (act !== 'del') delArmId = null;
 
   if (act === 'pay') { payingId = id; editingPaymentKey = null; render(); return; }
   if (act === 'paycancel') { payingId = null; render(); return; }
@@ -852,14 +856,26 @@ document.addEventListener('click', function(e) {
     return;
   }
   if (act === 'close') {
+    if (closeArmId !== id) {
+      closeArmId = id;
+      armTimer = setTimeout(function() { closeArmId = null; render(); }, 3000);
+      render();
+      return;
+    }
     loans = loans.map(function(l) { return l.id === id ? Object.assign({}, l, { closed: true, closedDate: localToday() }) : l; });
-    save(); render();
+    closeArmId = null; save(); render();
     return;
   }
 
   if (act === 'del') {
+    if (delArmId !== id) {
+      delArmId = id;
+      armTimer = setTimeout(function() { delArmId = null; render(); }, 3000);
+      render();
+      return;
+    }
     loans = loans.map(function(l) { return l.id === id ? Object.assign({}, l, { deleted: true, deletedDate: localToday() }) : l; });
-    save(); render();
+    delArmId = null; save(); render();
     return;
   }
   if (act === 'restoreloan') {
