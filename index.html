@@ -21,7 +21,9 @@
     padding: env(safe-area-inset-top) 0 60px;
   }
   .wrap { max-width: 430px; margin: 0 auto; padding-top: 18px; }
-  h1 { font-size: 34px; font-weight: 700; margin: 0; padding: 0 16px; }
+  .topbar { display: flex; align-items: center; gap: 4px; padding: 0 8px; }
+  .icon-btn { background: none; border: none; color: var(--text); font-size: 22px; padding: 4px 8px; cursor: pointer; }
+  h1 { font-size: 34px; font-weight: 700; margin: 0; }
   .card { background: var(--card); border-radius: 12px; margin: 0 16px; }
   .balance { padding: 16px; margin-top: 14px; }
   .balance .lbl { font-size: 13px; color: var(--sec); margin-bottom: 4px; }
@@ -70,17 +72,48 @@
   .actions { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 6px; }
   .empty { padding: 18px; color: var(--sec); font-size: 15px; }
   .closed-item { padding: 12px 16px; border-top: 0.5px solid var(--sep); }
+  .closed-item .meta { font-size: 13px; color: var(--ter); margin-top: 2px; }
   .footer { font-size: 12px; color: var(--ter); margin: 24px 16px 0; line-height: 1.5; }
   textarea {
     background: var(--inner); border: none; border-radius: 10px; color: var(--text);
     padding: 10px; font-size: 13px; width: 100%; min-height: 90px; outline: none; font-family: ui-monospace, monospace;
   }
   .hidden { display: none; }
+
+  .drawer-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    opacity: 0; pointer-events: none; transition: opacity .28s ease; z-index: 40;
+  }
+  .drawer-overlay.open { opacity: 1; pointer-events: auto; }
+  .drawer {
+    position: fixed; top: 0; left: 0; height: 100%; width: min(86vw, 400px);
+    background: var(--bg); transform: translateX(-100%);
+    transition: transform .28s ease; z-index: 50; overflow-y: auto;
+    box-shadow: 2px 0 24px rgba(0,0,0,0.4);
+  }
+  .drawer.open { transform: translateX(0); }
+  .drawer-inner { padding: calc(env(safe-area-inset-top) + 16px) 0 40px; }
+  .drawer-header { display: flex; justify-content: space-between; align-items: center; padding: 0 16px 8px; }
+
+  .stat-row { display: flex; justify-content: space-between; padding: 10px 16px; }
+  .stat-row + .stat-row { border-top: 0.5px solid var(--sep); }
+  .stat-lbl { font-size: 14px; color: var(--sec); }
+  .stat-val { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .trash-sub { padding: 10px 16px 4px; font-size: 13px; color: var(--sec); }
+  .bar-row { padding: 8px 16px; }
+  .bar-row .bar-head { display: flex; justify-content: space-between; font-size: 13px; color: var(--sec); margin-bottom: 4px; }
+  .bar-track { background: var(--inner); border-radius: 4px; height: 8px; overflow: hidden; }
+  .bar-fill { background: var(--blue); height: 100%; border-radius: 4px; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Долги</h1>
+  <div class="topbar">
+    <button class="icon-btn" id="menuBtn" aria-label="Меню">☰</button>
+    <h1>Долги</h1>
+  </div>
+
+  <div class="card hidden" id="reminderBanner" style="padding:14px 16px;margin-top:14px"></div>
 
   <div class="card balance">
     <div class="lbl">Должны сейчас</div>
@@ -122,42 +155,58 @@
   <div class="section">Активные</div>
   <div class="card" id="activeList"></div>
 
-  <div id="closedBlock" class="hidden">
-    <div class="section">Погашенные</div>
-    <div class="card" id="closedList"></div>
-  </div>
-
-  <div id="historyBlock" class="hidden">
-    <div class="section">История</div>
-    <div class="card" id="historyList"></div>
-  </div>
-
-  <div class="section">Данные</div>
-  <div class="card" style="padding:12px 16px">
-    <div style="display:flex;gap:16px;flex-wrap:wrap">
-      <button class="btn-text" id="backupBtn">Скопировать копию</button>
-      <button class="btn-text" id="downloadBtn">Скачать файл</button>
-      <button class="btn-text" id="restoreToggleBtn">Восстановить</button>
-      <button class="btn-text" id="uploadBtn">Загрузить файл</button>
-      <input type="file" id="fileInput" accept=".json,application/json" class="hidden">
-    </div>
-    <div id="restoreArea" class="hidden" style="margin-top:10px">
-      <textarea id="restoreText" placeholder="Вставь сюда сохранённую копию"></textarea>
-      <div style="display:flex;gap:16px;margin-top:6px">
-        <button class="btn-text bold" id="restoreApplyBtn">Загрузить</button>
-        <button class="btn-text sec" id="restoreCancelBtn">Отмена</button>
-      </div>
-    </div>
-    <div id="backupMsg" style="font-size:13px;color:var(--green);margin-top:6px" class="hidden"></div>
-  </div>
-
-  <div class="footer">Данные хранятся на этом устройстве (localStorage). Иногда жми «Скопировать копию» или «Скачать файл» и сохраняй — на случай чистки Safari.</div>
+  <div class="footer">Данные хранятся на этом устройстве (localStorage). Бэкап, история, статистика и корзина — в меню (☰).</div>
 </div>
+
+<div id="drawerOverlay" class="drawer-overlay"></div>
+<aside id="drawer" class="drawer" aria-hidden="true">
+  <div class="drawer-inner">
+    <div class="drawer-header">
+      <span style="font-size:20px;font-weight:700">Ещё</span>
+      <button class="icon-btn" id="drawerCloseBtn" aria-label="Закрыть">✕</button>
+    </div>
+
+    <div id="closedBlock" class="hidden">
+      <div class="section">Погашенные</div>
+      <div class="card" id="closedList"></div>
+    </div>
+
+    <div id="historyBlock" class="hidden">
+      <div class="section">История</div>
+      <div class="card" id="historyList"></div>
+    </div>
+
+    <div class="section">Статистика</div>
+    <div class="card" id="statsContent"></div>
+
+    <div class="section">Корзина</div>
+    <div class="card" id="trashList"></div>
+
+    <div class="section">Данные</div>
+    <div class="card" style="padding:12px 16px">
+      <div style="display:flex;gap:16px;flex-wrap:wrap">
+        <button class="btn-text" id="backupBtn">Скопировать копию</button>
+        <button class="btn-text" id="downloadBtn">Скачать файл</button>
+        <button class="btn-text" id="restoreToggleBtn">Восстановить</button>
+        <button class="btn-text" id="uploadBtn">Загрузить файл</button>
+        <input type="file" id="fileInput" accept=".json,application/json" class="hidden">
+      </div>
+      <div id="restoreArea" class="hidden" style="margin-top:10px">
+        <textarea id="restoreText" placeholder="Вставь сюда сохранённую копию"></textarea>
+        <div style="display:flex;gap:16px;margin-top:6px">
+          <button class="btn-text bold" id="restoreApplyBtn">Загрузить</button>
+          <button class="btn-text sec" id="restoreCancelBtn">Отмена</button>
+        </div>
+      </div>
+      <div id="backupMsg" style="font-size:13px;color:var(--green);margin-top:6px" class="hidden"></div>
+    </div>
+  </div>
+</aside>
 
 <script>
 // ---------- math (verified 8/8 against the owner's examples) ----------
 function daysBetween(a, b) { return Math.round((Date.parse(b) - Date.parse(a)) / 86400000); }
-function paidSum(l) { return (l.payments || []).reduce(function(s, p) { return s + p.value; }, 0); }
+function paidSum(l) { return (l.payments || []).filter(function(p) { return !p.deleted; }).reduce(function(s, p) { return s + p.value; }, 0); }
 
 // day-index helpers for pause interval math (kept separate from daysBetween, which stays untouched)
 function dayIndex(ymd) { return Math.round(Date.parse(ymd) / 86400000); }
@@ -208,21 +257,28 @@ function localToday() {
 }
 function fmt(n) { return Math.round(n).toLocaleString('ru-RU'); }
 function fmtDate(ymd) { if (!ymd) return ''; var p = ymd.split('-'); return p[2] + '.' + p[1]; }
+function fmtMonth(ym) {
+  var names = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+  var p = ym.split('-');
+  return names[parseInt(p[1], 10) - 1] + ' ' + p[0];
+}
 function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 
 // ---------- state ----------
 var KEY = 'radmir-debts';
+var REMINDER_KEY = 'radmir-debts-reminder-dismissed';
 var loans = [];
 var fType = 'deadline';
 var editingId = null;
 var payingId = null;
 var editingPaymentKey = null;
-var deleteArmId = null;
-var deleteArmPayKey = null;
+var purgeArmId = null;
+var purgeArmPayKey = null;
 var armTimer = null;
 var showClosed = false;
 var showHistory = false;
 var searchQuery = '';
+var drawerOpen = false;
 
 function load() {
   try {
@@ -244,13 +300,107 @@ function matchesSearch(l) {
   return !q || l.name.toLowerCase().indexOf(q) !== -1;
 }
 
+// ---------- reminders ----------
+function dueReminders(t) {
+  return loans.filter(function(l) {
+    return !l.deleted && !l.closed && l.type === 'deadline' && !isPausedOn(l, t) && daysBetween(l.dueDate, t) >= 0;
+  });
+}
+function remindersDismissedToday(t) { return localStorage.getItem(REMINDER_KEY) === t; }
+function dismissRemindersForToday(t) { localStorage.setItem(REMINDER_KEY, t); }
+function renderReminders(t) {
+  var due = dueReminders(t);
+  var el = document.getElementById('reminderBanner');
+  if (!due.length || remindersDismissedToday(t)) { el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  el.innerHTML = '<div style="font-weight:600;margin-bottom:6px">Напоминания</div>' +
+    due.map(function(l) {
+      return '<div style="font-size:14px;margin-top:2px">' + esc(l.name) + ' — ' + statusInfo(l, t).text.split(' · ')[0] + '</div>';
+    }).join('') +
+    '<button class="btn-text sec" data-act="dismissreminders" style="margin-top:8px;padding-left:0">Скрыть на сегодня</button>';
+}
+
+// ---------- statistics ----------
+function computeStats(t) {
+  var live = loans.filter(function(l) { return !l.deleted; });
+  var lifetimeLent = live.reduce(function(s, l) { return s + l.principal; }, 0);
+  var lifetimeRepaid = live.reduce(function(s, l) { return s + paidSum(l); }, 0);
+  var debtors = live.filter(function(l) { return !l.closed; })
+    .map(function(l) { return { name: l.name, owed: Math.max(0, owedNow(l, t)) }; })
+    .sort(function(a, b) { return b.owed - a.owed; })
+    .slice(0, 5);
+  var byMonth = {};
+  live.forEach(function(l) {
+    var m = (l.issueDate || '').slice(0, 7);
+    if (!m) return;
+    byMonth[m] = (byMonth[m] || 0) + l.principal;
+  });
+  var months = Object.keys(byMonth).sort();
+  var maxMonth = months.reduce(function(mx, m) { return Math.max(mx, byMonth[m]); }, 0);
+  return { lifetimeLent: lifetimeLent, lifetimeRepaid: lifetimeRepaid, debtors: debtors, months: months, byMonth: byMonth, maxMonth: maxMonth };
+}
+function renderStats() {
+  var s = computeStats(localToday());
+  var html = '<div class="stat-row"><span class="stat-lbl">Выдано всего</span><span class="stat-val">' + fmt(s.lifetimeLent) + ' ₽</span></div>' +
+    '<div class="stat-row"><span class="stat-lbl">Возвращено всего</span><span class="stat-val">' + fmt(s.lifetimeRepaid) + ' ₽</span></div>';
+  if (s.debtors.length) {
+    html += '<div class="trash-sub">Больше всех должны</div>' +
+      s.debtors.map(function(d) {
+        return '<div class="stat-row"><span class="stat-lbl">' + esc(d.name) + '</span><span class="stat-val">' + fmt(d.owed) + ' ₽</span></div>';
+      }).join('');
+  }
+  if (s.months.length) {
+    html += '<div class="trash-sub">Выдано по месяцам</div>' +
+      s.months.map(function(m) {
+        var pct = s.maxMonth > 0 ? Math.round(s.byMonth[m] / s.maxMonth * 100) : 0;
+        return '<div class="bar-row"><div class="bar-head"><span>' + fmtMonth(m) + '</span><span>' + fmt(s.byMonth[m]) + ' ₽</span></div>' +
+          '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%"></div></div></div>';
+      }).join('');
+  }
+  document.getElementById('statsContent').innerHTML = html;
+}
+
+// ---------- trash ----------
+function collectTrashedPayments() {
+  var out = [];
+  loans.forEach(function(l) {
+    if (l.deleted) return;
+    (l.payments || []).forEach(function(p) {
+      if (p.deleted) out.push({ loanId: l.id, loanName: l.name, payment: p });
+    });
+  });
+  return out;
+}
+function renderTrash() {
+  var trashedLoans = loans.filter(function(l) { return l.deleted; });
+  var trashedPayments = collectTrashedPayments();
+  var html = '<div class="trash-sub">Долги</div>';
+  html += !trashedLoans.length ? '<div class="empty">Корзина долгов пуста.</div>' : trashedLoans.map(function(l) {
+    return '<div class="closed-item"><div class="top"><span style="font-weight:600">' + esc(l.name) + '</span>' +
+      '<span style="font-size:13px;color:var(--ter)">' + fmt(l.principal) + ' ₽</span></div>' +
+      '<div class="meta">В корзине с ' + fmtDate(l.deletedDate) + '</div>' +
+      '<div class="actions"><button class="btn-text bold" data-act="restoreloan" data-id="' + l.id + '">Восстановить</button>' +
+      '<button class="btn-text red" data-act="purgeloan" data-id="' + l.id + '">' + (purgeArmId === l.id ? 'Точно навсегда?' : 'Удалить навсегда') + '</button></div></div>';
+  }).join('');
+  html += '<div class="trash-sub">Платежи</div>';
+  html += !trashedPayments.length ? '<div class="empty">Корзина платежей пуста.</div>' : trashedPayments.map(function(x) {
+    var payKey = x.loanId + ':' + x.payment.id;
+    return '<div class="closed-item"><div class="top"><span style="font-weight:600">' + esc(x.loanName) + '</span>' +
+      '<span style="font-size:13px;color:var(--ter)">' + fmt(x.payment.value) + ' ₽</span></div>' +
+      '<div class="meta">' + (x.payment.note ? esc(x.payment.note) + ' · ' : '') + 'в корзине с ' + fmtDate(x.payment.deletedDate) + '</div>' +
+      '<div class="actions"><button class="btn-text bold" data-act="restorepayment" data-id="' + x.loanId + '" data-pid="' + x.payment.id + '">Восстановить</button>' +
+      '<button class="btn-text red" data-act="purgepayment" data-id="' + x.loanId + '" data-pid="' + x.payment.id + '">' + (purgeArmPayKey === payKey ? 'Точно навсегда?' : 'Удалить навсегда') + '</button></div></div>';
+  }).join('');
+  document.getElementById('trashList').innerHTML = html;
+}
+
 // ---------- history log ----------
 function buildHistory(allLoans) {
   var events = [];
   allLoans.forEach(function(l) {
     var name = esc(l.name);
     events.push({ date: l.issueDate, order: 0, html: 'Записан долг «' + name + '» · ' + fmt(l.principal) + ' ₽' });
-    (l.payments || []).forEach(function(p) {
+    (l.payments || []).filter(function(p) { return !p.deleted; }).forEach(function(p) {
       events.push({ date: p.date, order: 1, html: name + ' — выплата ' + fmt(p.value) + ' ₽' + (p.note ? ' (' + esc(p.note) + ')' : '') });
     });
     (l.pauses || []).forEach(function(p) {
@@ -282,8 +432,9 @@ function statusInfo(l, t) {
 
 function render() {
   var t = localToday();
-  var allActive = loans.filter(function(l) { return !l.closed; });
-  var allClosed = loans.filter(function(l) { return l.closed; });
+  var live = loans.filter(function(l) { return !l.deleted; });
+  var allActive = live.filter(function(l) { return !l.closed; });
+  var allClosed = live.filter(function(l) { return l.closed; });
   var act = allActive.filter(matchesSearch);
   act.sort(function(a, b) {
     var ao = a.type === 'deadline' && daysBetween(a.dueDate, t) > 0 ? 1 : 0;
@@ -292,6 +443,8 @@ function render() {
     return owedNow(b, t) - owedNow(a, t);
   });
   var cls = allClosed.filter(matchesSearch);
+
+  renderReminders(t);
 
   var total = allActive.reduce(function(s, l) { return s + Math.max(0, owedNow(l, t)); }, 0);
   var drip = allActive.reduce(function(s, l) { return s + dripPerDay(l, t); }, 0);
@@ -307,7 +460,7 @@ function render() {
     box.innerHTML = act.map(function(l) {
       var owed = Math.max(0, owedNow(l, t));
       var st = statusInfo(l, t);
-      var pays = (l.payments || []).map(function(p) {
+      var pays = (l.payments || []).filter(function(p) { return !p.deleted; }).map(function(p) {
         var payKey = l.id + ':' + p.id;
         if (editingPaymentKey === payKey) {
           return '<div class="pay-line-edit">' +
@@ -324,7 +477,7 @@ function render() {
           (p.note ? '<span class="item">' + esc(p.note) + '</span>' : 'деньгами') +
           '</span><span class="val">−' + fmt(p.value) + ' ₽ ' +
           '<button class="pbtn" data-act="paymentedit" data-id="' + l.id + '" data-pid="' + p.id + '">✎</button>' +
-          '<button class="pbtn" data-act="paymentdel" data-id="' + l.id + '" data-pid="' + p.id + '">' + (deleteArmPayKey === payKey ? '?' : '✕') + '</button>' +
+          '<button class="pbtn" data-act="paymentdel" data-id="' + l.id + '" data-pid="' + p.id + '">✕</button>' +
           '</span></div>';
       }).join('');
       var actions;
@@ -349,7 +502,7 @@ function render() {
           (isPausedState
             ? '<button class="btn-text" data-act="resumeloan" data-id="' + l.id + '">Возобновить</button>'
             : '<button class="btn-text orange" data-act="pauseloan" data-id="' + l.id + '">Пауза</button>') +
-          '<button class="btn-text red" data-act="del" data-id="' + l.id + '">' + (deleteArmId === l.id ? 'Точно удалить?' : 'Удалить') + '</button>' +
+          '<button class="btn-text red" data-act="del" data-id="' + l.id + '">Удалить</button>' +
           '</div>';
       }
       return '<div class="loan">' +
@@ -372,13 +525,13 @@ function render() {
     var head = '<div style="padding:4px 16px"><button class="btn-text" data-act="toggleclosed">' +
       (showClosed ? 'Скрыть' : 'Показать (' + cls.length + ')') + '</button></div>';
     var rows = !showClosed ? '' : cls.map(function(l) {
-      var items = (l.payments || []).filter(function(p) { return p.note; }).map(function(p) { return esc(p.note); }).join(', ');
+      var items = (l.payments || []).filter(function(p) { return p.note && !p.deleted; }).map(function(p) { return esc(p.note); }).join(', ');
       return '<div class="closed-item">' +
         '<div class="top"><span style="font-size:16px;font-weight:600;color:var(--sec)">' + esc(l.name) + '</span>' +
         '<span style="font-size:13px;color:var(--green)">✓ ' + fmtDate(l.closedDate) + '</span></div>' +
         '<div class="meta">Выдал ' + fmt(l.principal) + ' ₽ · вернул ' + fmt(paidSum(l)) + ' ₽' +
         (items ? ' · вещами: ' + items : '') + '</div>' +
-        '<button class="btn-text red" data-act="del" data-id="' + l.id + '">' + (deleteArmId === l.id ? 'Точно удалить?' : 'Удалить') + '</button>' +
+        '<button class="btn-text red" data-act="del" data-id="' + l.id + '">Удалить</button>' +
         '</div>';
     }).join('');
     cList.innerHTML = head + rows;
@@ -386,19 +539,43 @@ function render() {
 
   var hBlock = document.getElementById('historyBlock');
   var hList = document.getElementById('historyList');
-  if (loans.length === 0) {
+  if (live.length === 0) {
     hBlock.classList.add('hidden');
   } else {
     hBlock.classList.remove('hidden');
     var hHead = '<div style="padding:4px 16px"><button class="btn-text" data-act="togglehistory">' +
       (showHistory ? 'Скрыть' : 'Показать') + '</button></div>';
-    var hRows = !showHistory ? '' : buildHistory(loans).map(function(ev) {
+    var hRows = !showHistory ? '' : buildHistory(live).map(function(ev) {
       return '<div class="closed-item"><div class="top"><span style="font-size:14px">' + ev.html + '</span>' +
         '<span style="font-size:13px;color:var(--ter);white-space:nowrap">' + fmtDate(ev.date) + '</span></div></div>';
     }).join('');
     hList.innerHTML = hHead + hRows;
   }
+
+  if (drawerOpen) { renderStats(); renderTrash(); }
 }
+
+// ---------- drawer ----------
+function openDrawer() {
+  drawerOpen = true;
+  document.getElementById('drawer').classList.add('open');
+  document.getElementById('drawerOverlay').classList.add('open');
+  document.getElementById('drawer').setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
+  renderStats();
+  renderTrash();
+}
+function closeDrawer() {
+  drawerOpen = false;
+  document.getElementById('drawer').classList.remove('open');
+  document.getElementById('drawerOverlay').classList.remove('open');
+  document.getElementById('drawer').setAttribute('aria-hidden', 'true');
+  document.body.style.overflow = '';
+}
+document.getElementById('menuBtn').addEventListener('click', openDrawer);
+document.getElementById('drawerOverlay').addEventListener('click', closeDrawer);
+document.getElementById('drawerCloseBtn').addEventListener('click', closeDrawer);
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape' && drawerOpen) closeDrawer(); });
 
 // ---------- actions ----------
 document.addEventListener('click', function(e) {
@@ -410,8 +587,8 @@ document.addEventListener('click', function(e) {
   var payKey = pid ? id + ':' + pid : null;
 
   clearTimeout(armTimer);
-  if (act !== 'del') deleteArmId = null;
-  if (act !== 'paymentdel') deleteArmPayKey = null;
+  if (act !== 'purgeloan') purgeArmId = null;
+  if (act !== 'purgepayment') purgeArmPayKey = null;
 
   if (act === 'pay') { payingId = id; editingPaymentKey = null; render(); return; }
   if (act === 'paycancel') { payingId = null; render(); return; }
@@ -434,19 +611,32 @@ document.addEventListener('click', function(e) {
     save(); render();
     return;
   }
+
   if (act === 'del') {
-    if (deleteArmId !== id) {
-      deleteArmId = id;
-      armTimer = setTimeout(function() { deleteArmId = null; render(); }, 3000);
+    loans = loans.map(function(l) { return l.id === id ? Object.assign({}, l, { deleted: true, deletedDate: localToday() }) : l; });
+    save(); render();
+    return;
+  }
+  if (act === 'restoreloan') {
+    loans = loans.map(function(l) { return l.id === id ? Object.assign({}, l, { deleted: false, deletedDate: null }) : l; });
+    save(); render();
+    return;
+  }
+  if (act === 'purgeloan') {
+    if (purgeArmId !== id) {
+      purgeArmId = id;
+      armTimer = setTimeout(function() { purgeArmId = null; render(); }, 3000);
       render();
       return;
     }
     loans = loans.filter(function(l) { return l.id !== id; });
-    deleteArmId = null; save(); render();
+    purgeArmId = null; save(); render();
     return;
   }
+
   if (act === 'toggleclosed') { showClosed = !showClosed; render(); return; }
   if (act === 'togglehistory') { showHistory = !showHistory; render(); return; }
+  if (act === 'dismissreminders') { dismissRemindersForToday(localToday()); render(); return; }
 
   if (act === 'editloan') {
     var loan = loans.find(function(l) { return l.id === id; });
@@ -489,9 +679,27 @@ document.addEventListener('click', function(e) {
     return;
   }
   if (act === 'paymentdel') {
-    if (deleteArmPayKey !== payKey) {
-      deleteArmPayKey = payKey;
-      armTimer = setTimeout(function() { deleteArmPayKey = null; render(); }, 3000);
+    loans = loans.map(function(l) {
+      if (l.id !== id) return l;
+      var pays = (l.payments || []).map(function(p) { return p.id === pid ? Object.assign({}, p, { deleted: true, deletedDate: localToday() }) : p; });
+      return Object.assign({}, l, { payments: pays });
+    });
+    save(); render();
+    return;
+  }
+  if (act === 'restorepayment') {
+    loans = loans.map(function(l) {
+      if (l.id !== id) return l;
+      var pays = (l.payments || []).map(function(p) { return p.id === pid ? Object.assign({}, p, { deleted: false, deletedDate: null }) : p; });
+      return Object.assign({}, l, { payments: pays });
+    });
+    save(); render();
+    return;
+  }
+  if (act === 'purgepayment') {
+    if (purgeArmPayKey !== payKey) {
+      purgeArmPayKey = payKey;
+      armTimer = setTimeout(function() { purgeArmPayKey = null; render(); }, 3000);
       render();
       return;
     }
@@ -500,7 +708,7 @@ document.addEventListener('click', function(e) {
       var pays = (l.payments || []).filter(function(p) { return p.id !== pid; });
       return Object.assign({}, l, { payments: pays });
     });
-    deleteArmPayKey = null; save(); render();
+    purgeArmPayKey = null; save(); render();
     return;
   }
 });
