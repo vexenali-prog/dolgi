@@ -7,12 +7,27 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Долги">
 <link rel="apple-touch-icon" href="icon.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#000000" id="themeColorMeta">
 <title>Долги</title>
+<script>(function(){try{var m=localStorage.getItem('radmir-debts-theme');if(m&&m!=='system')document.documentElement.setAttribute('data-theme',m);}catch(e){}})();</script>
 <style>
   :root {
     --bg: #000; --card: #1C1C1E; --inner: #2C2C2E; --segment: #48484A;
     --sep: #38383A; --text: #FFF; --sec: rgba(235,235,245,0.6); --ter: rgba(235,235,245,0.3);
     --blue: #0A84FF; --green: #30D158; --red: #FF453A; --orange: #FF9F0A;
+  }
+  :root[data-theme="light"] {
+    --bg: #F2F2F7; --card: #FFFFFF; --inner: #E3E3E8; --segment: #FFFFFF;
+    --sep: #C6C6C8; --text: #000000; --sec: rgba(60,60,67,0.6); --ter: rgba(60,60,67,0.3);
+    --blue: #007AFF; --green: #34C759; --red: #FF3B30; --orange: #FF9500;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme]) {
+      --bg: #F2F2F7; --card: #FFFFFF; --inner: #E3E3E8; --segment: #FFFFFF;
+      --sep: #C6C6C8; --text: #000000; --sec: rgba(60,60,67,0.6); --ter: rgba(60,60,67,0.3);
+      --blue: #007AFF; --green: #34C759; --red: #FF3B30; --orange: #FF9500;
+    }
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   body {
@@ -35,22 +50,30 @@
   .btn-filled {
     display: block; width: calc(100% - 32px); margin: 12px 16px 0; background: var(--blue); color: #fff;
     border: none; border-radius: 12px; padding: 13px; font-size: 16px; font-weight: 600; cursor: pointer;
+    transition: transform .12s ease;
   }
-  .btn-text { background: none; border: none; font-size: 15px; padding: 6px 2px; cursor: pointer; color: var(--blue); }
+  .btn-text { background: none; border: none; font-size: 15px; padding: 6px 2px; cursor: pointer; color: var(--blue); transition: transform .12s ease; }
   .btn-text.bold { font-weight: 600; }
   .btn-text.green { color: var(--green); }
   .btn-text.red { color: var(--red); }
   .btn-text.orange { color: var(--orange); }
   .btn-text.sec { color: var(--sec); }
+  .btn-text:active, .btn-filled:active { transform: scale(0.96); }
   .pbtn { background: none; border: none; color: var(--ter); font-size: 13px; padding: 0 3px; cursor: pointer; }
   input {
     background: var(--inner); border: none; border-radius: 10px; color: var(--text);
     padding: 11px 12px; font-size: 17px; width: 100%; outline: none; -webkit-appearance: none;
     color-scheme: dark;
   }
+  :root[data-theme="light"] input { color-scheme: light; }
+  @media (prefers-color-scheme: light) { :root:not([data-theme]) input { color-scheme: light; } }
   .row { display: flex; gap: 10px; }
   .grid { display: grid; gap: 10px; }
-  .form { padding: 14px; margin-top: 12px; }
+  .form {
+    padding: 14px; margin-top: 12px; overflow: hidden; max-height: 800px; opacity: 1;
+    transition: max-height .28s ease, opacity .28s ease, margin-top .28s ease;
+  }
+  .form.collapsed { max-height: 0; opacity: 0; margin-top: 0; padding-top: 0; padding-bottom: 0; }
   .seg { display: flex; background: var(--inner); border-radius: 9px; padding: 2px; }
   .seg button {
     flex: 1; padding: 8px 0; border-radius: 7px; border: none; font-size: 14px; font-weight: 600;
@@ -104,6 +127,16 @@
   .bar-row .bar-head { display: flex; justify-content: space-between; font-size: 13px; color: var(--sec); margin-bottom: 4px; }
   .bar-track { background: var(--inner); border-radius: 4px; height: 8px; overflow: hidden; }
   .bar-fill { background: var(--blue); height: 100%; border-radius: 4px; }
+
+  #reminderBanner { transition: opacity .28s ease; }
+  #reminderBanner.fading { opacity: 0; }
+
+  #lockScreen {
+    position: fixed; inset: 0; background: var(--bg); z-index: 100;
+    display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 16px; padding: 24px;
+  }
+  #lockScreen.hidden { display: none; }
+  #lockScreen input { max-width: 160px; text-align: center; font-size: 28px; letter-spacing: 10px; }
 </style>
 </head>
 <body>
@@ -123,7 +156,7 @@
 
   <button class="btn-filled" id="openFormBtn">Новый долг</button>
 
-  <div class="card form hidden" id="addForm">
+  <div class="card form collapsed" id="addForm">
     <div class="grid">
       <input id="fName" placeholder="Кому дал">
       <div class="row">
@@ -176,11 +209,17 @@
       <div class="card" id="historyList"></div>
     </div>
 
+    <div class="section">Люди</div>
+    <div class="card" id="peopleList"></div>
+
     <div class="section">Статистика</div>
     <div class="card" id="statsContent"></div>
 
     <div class="section">Корзина</div>
     <div class="card" id="trashList"></div>
+
+    <div class="section">Настройки</div>
+    <div class="card" id="settingsContent" style="padding:12px 16px"></div>
 
     <div class="section">Данные</div>
     <div class="card" style="padding:12px 16px">
@@ -202,6 +241,13 @@
     </div>
   </div>
 </aside>
+
+<div id="lockScreen" class="hidden">
+  <div style="font-size:40px">🔒</div>
+  <div style="font-size:17px;font-weight:600">Введи PIN</div>
+  <input type="password" inputmode="numeric" maxlength="4" id="lockPinInput">
+  <div class="err hidden" id="lockError">Неверный PIN</div>
+</div>
 
 <script>
 // ---------- math (verified 8/8 against the owner's examples) ----------
@@ -267,6 +313,9 @@ function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').
 // ---------- state ----------
 var KEY = 'radmir-debts';
 var REMINDER_KEY = 'radmir-debts-reminder-dismissed';
+var THEME_KEY = 'radmir-debts-theme';
+var PIN_HASH_KEY = 'radmir-debts-pin-hash';
+var PIN_SALT_KEY = 'radmir-debts-pin-salt';
 var loans = [];
 var fType = 'deadline';
 var editingId = null;
@@ -274,11 +323,15 @@ var payingId = null;
 var editingPaymentKey = null;
 var purgeArmId = null;
 var purgeArmPayKey = null;
+var pinRemoveArmed = false;
 var armTimer = null;
 var showClosed = false;
 var showHistory = false;
 var searchQuery = '';
 var drawerOpen = false;
+var themeMode = localStorage.getItem(THEME_KEY) || 'system';
+var unlocked = true;
+var pinFormMode = null;
 
 function load() {
   try {
@@ -298,6 +351,146 @@ function save() {
 function matchesSearch(l) {
   var q = searchQuery.trim().toLowerCase();
   return !q || l.name.toLowerCase().indexOf(q) !== -1;
+}
+
+// ---------- theme ----------
+function applyTheme(mode) {
+  if (mode === 'system') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', mode);
+  var light = mode === 'light' || (mode === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches);
+  var meta = document.getElementById('themeColorMeta');
+  if (meta) meta.setAttribute('content', light ? '#F2F2F7' : '#000000');
+}
+function setTheme(mode) {
+  themeMode = mode;
+  localStorage.setItem(THEME_KEY, mode);
+  applyTheme(mode);
+  renderSettings();
+}
+
+// ---------- PIN lock ----------
+function isPinSet() { return !!localStorage.getItem(PIN_HASH_KEY); }
+function randomSalt() {
+  if (window.crypto && window.crypto.getRandomValues) {
+    var arr = new Uint8Array(16);
+    window.crypto.getRandomValues(arr);
+    return Array.prototype.map.call(arr, function(b) { return b.toString(16).padStart(2, '0'); }).join('');
+  }
+  return String(Math.random()).slice(2) + String(Date.now());
+}
+function fnv1aHash(str) {
+  var h = 0x811c9dc5;
+  for (var i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = (h * 0x01000193) >>> 0;
+  }
+  return h.toString(16);
+}
+function hashPin(pin, salt, cb) {
+  var data = salt + pin;
+  if (window.crypto && window.crypto.subtle) {
+    var enc = new TextEncoder().encode(data);
+    window.crypto.subtle.digest('SHA-256', enc).then(function(buf) {
+      var hex = Array.prototype.map.call(new Uint8Array(buf), function(b) { return b.toString(16).padStart(2, '0'); }).join('');
+      cb(hex);
+    }, function() { cb(fnv1aHash(data)); });
+  } else {
+    cb(fnv1aHash(data));
+  }
+}
+function setPin(pin, cb) {
+  var salt = randomSalt();
+  hashPin(pin, salt, function(hash) {
+    localStorage.setItem(PIN_SALT_KEY, salt);
+    localStorage.setItem(PIN_HASH_KEY, hash);
+    cb();
+  });
+}
+function removePin() {
+  localStorage.removeItem(PIN_SALT_KEY);
+  localStorage.removeItem(PIN_HASH_KEY);
+}
+function attemptUnlock(pin, cb) {
+  var salt = localStorage.getItem(PIN_SALT_KEY) || '';
+  hashPin(pin, salt, function(hash) {
+    cb(hash === localStorage.getItem(PIN_HASH_KEY));
+  });
+}
+function showLockScreen() {
+  unlocked = false;
+  var el = document.getElementById('lockScreen');
+  el.classList.remove('hidden');
+  document.getElementById('lockPinInput').value = '';
+  document.getElementById('lockError').classList.add('hidden');
+  document.getElementById('lockPinInput').focus();
+}
+function hideLockScreen() {
+  unlocked = true;
+  document.getElementById('lockScreen').classList.add('hidden');
+}
+function checkRelock() {
+  if (!isPinSet()) return;
+  if (document.visibilityState === 'hidden') {
+    unlocked = false;
+  } else if (document.visibilityState === 'visible' && !unlocked) {
+    showLockScreen();
+  }
+}
+
+// ---------- people ----------
+function computePeople(t) {
+  var live = loans.filter(function(l) { return !l.deleted; });
+  var groups = {};
+  live.forEach(function(l) {
+    if (!groups[l.name]) groups[l.name] = { name: l.name, totalLent: 0, owedNow: 0, loanCount: 0 };
+    var g = groups[l.name];
+    g.totalLent += l.principal;
+    g.loanCount += 1;
+    if (!l.closed) g.owedNow += Math.max(0, owedNow(l, t));
+  });
+  return Object.keys(groups).map(function(k) { return groups[k]; }).sort(function(a, b) {
+    return b.owedNow - a.owedNow || b.totalLent - a.totalLent;
+  });
+}
+function renderPeople() {
+  var people = computePeople(localToday());
+  var html = !people.length ? '<div class="empty">Пока никого нет.</div>' : people.map(function(p) {
+    return '<div class="stat-row" style="cursor:pointer" data-act="selectperson" data-name="' + esc(p.name) + '">' +
+      '<span class="stat-lbl">' + esc(p.name) + '<br><span style="font-size:12px;color:var(--ter)">' +
+      p.loanCount + (p.loanCount === 1 ? ' долг' : ' долгов') + ' · выдано всего ' + fmt(p.totalLent) + ' ₽</span></span>' +
+      '<span class="stat-val">' + fmt(p.owedNow) + ' ₽</span></div>';
+  }).join('');
+  document.getElementById('peopleList').innerHTML = html;
+}
+
+// ---------- settings ----------
+function renderSettings() {
+  var html = '<div style="font-size:13px;color:var(--sec);margin-bottom:6px">Тема</div>' +
+    '<div class="seg" style="margin-bottom:16px">' +
+    '<button type="button" data-act="theme" data-mode="light" class="' + (themeMode === 'light' ? 'on' : '') + '">Светлая</button>' +
+    '<button type="button" data-act="theme" data-mode="dark" class="' + (themeMode === 'dark' ? 'on' : '') + '">Тёмная</button>' +
+    '<button type="button" data-act="theme" data-mode="system" class="' + (themeMode === 'system' ? 'on' : '') + '">Системная</button>' +
+    '</div>' +
+    '<div style="font-size:13px;color:var(--sec);margin-bottom:6px">Защита входа</div>';
+  if (pinFormMode === 'set' || pinFormMode === 'change') {
+    html += '<div class="grid">' +
+      '<input type="password" inputmode="numeric" maxlength="4" placeholder="Новый PIN (4 цифры)" id="pinNew">' +
+      '<input type="password" inputmode="numeric" maxlength="4" placeholder="Повтори PIN" id="pinConfirm">' +
+      '<div class="err hidden" id="pinFormError"></div>' +
+      '<div style="font-size:12px;color:var(--ter)">Если забудешь PIN — восстановить нельзя, только очистка данных сайта (вместе с долгами).</div>' +
+      '<div style="display:flex;gap:16px">' +
+      '<button class="btn-text bold" data-act="pinsave">Сохранить</button>' +
+      '<button class="btn-text sec" data-act="pincancel">Отмена</button>' +
+      '</div></div>';
+  } else if (isPinSet()) {
+    html += '<div style="display:flex;gap:16px;flex-wrap:wrap">' +
+      '<button class="btn-text" data-act="pinchange">Сменить PIN</button>' +
+      '<button class="btn-text red" data-act="pinremove">' + (pinRemoveArmed ? 'Точно убрать?' : 'Убрать PIN') + '</button>' +
+      '</div>';
+  } else {
+    html += '<button class="btn-text" data-act="pinset">Установить PIN</button>';
+  }
+  document.getElementById('settingsContent').innerHTML = html;
 }
 
 // ---------- reminders ----------
@@ -552,7 +745,7 @@ function render() {
     hList.innerHTML = hHead + hRows;
   }
 
-  if (drawerOpen) { renderStats(); renderTrash(); }
+  if (drawerOpen) { renderStats(); renderTrash(); renderPeople(); renderSettings(); }
 }
 
 // ---------- drawer ----------
@@ -564,6 +757,8 @@ function openDrawer() {
   document.body.style.overflow = 'hidden';
   renderStats();
   renderTrash();
+  renderPeople();
+  renderSettings();
 }
 function closeDrawer() {
   drawerOpen = false;
@@ -589,6 +784,7 @@ document.addEventListener('click', function(e) {
   clearTimeout(armTimer);
   if (act !== 'purgeloan') purgeArmId = null;
   if (act !== 'purgepayment') purgeArmPayKey = null;
+  if (act !== 'pinremove') pinRemoveArmed = false;
 
   if (act === 'pay') { payingId = id; editingPaymentKey = null; render(); return; }
   if (act === 'paycancel') { payingId = null; render(); return; }
@@ -636,7 +832,46 @@ document.addEventListener('click', function(e) {
 
   if (act === 'toggleclosed') { showClosed = !showClosed; render(); return; }
   if (act === 'togglehistory') { showHistory = !showHistory; render(); return; }
-  if (act === 'dismissreminders') { dismissRemindersForToday(localToday()); render(); return; }
+  if (act === 'dismissreminders') {
+    var banner = document.getElementById('reminderBanner');
+    banner.classList.add('fading');
+    setTimeout(function() { dismissRemindersForToday(localToday()); render(); }, 280);
+    return;
+  }
+
+  if (act === 'selectperson') {
+    searchQuery = btn.getAttribute('data-name');
+    document.getElementById('searchInput').value = searchQuery;
+    closeDrawer();
+    render();
+    return;
+  }
+
+  if (act === 'theme') { setTheme(btn.getAttribute('data-mode')); return; }
+  if (act === 'pinset') { pinFormMode = 'set'; renderSettings(); return; }
+  if (act === 'pinchange') { pinFormMode = 'change'; renderSettings(); return; }
+  if (act === 'pincancel') { pinFormMode = null; renderSettings(); return; }
+  if (act === 'pinsave') {
+    var p1 = document.getElementById('pinNew').value;
+    var p2 = document.getElementById('pinConfirm').value;
+    var errEl = document.getElementById('pinFormError');
+    if (!/^\d{4}$/.test(p1)) { errEl.textContent = 'PIN — ровно 4 цифры'; errEl.classList.remove('hidden'); return; }
+    if (p1 !== p2) { errEl.textContent = 'PIN не совпадают'; errEl.classList.remove('hidden'); return; }
+    setPin(p1, function() { pinFormMode = null; renderSettings(); });
+    return;
+  }
+  if (act === 'pinremove') {
+    if (!pinRemoveArmed) {
+      pinRemoveArmed = true;
+      armTimer = setTimeout(function() { pinRemoveArmed = false; renderSettings(); }, 3000);
+      renderSettings();
+      return;
+    }
+    removePin();
+    pinRemoveArmed = false;
+    renderSettings();
+    return;
+  }
 
   if (act === 'editloan') {
     var loan = loans.find(function(l) { return l.id === id; });
@@ -736,7 +971,7 @@ function openAddForm() {
   fillFormFields(null);
   document.getElementById('saveLoanBtn').textContent = 'Записать';
   showFormError(null);
-  addForm.classList.remove('hidden');
+  addForm.classList.remove('collapsed');
   openFormBtn.classList.add('hidden');
 }
 function openEditForm(loan) {
@@ -744,13 +979,13 @@ function openEditForm(loan) {
   fillFormFields(loan);
   document.getElementById('saveLoanBtn').textContent = 'Сохранить';
   showFormError(null);
-  addForm.classList.remove('hidden');
+  addForm.classList.remove('collapsed');
   openFormBtn.classList.add('hidden');
   addForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 function closeForm() {
   editingId = null;
-  addForm.classList.add('hidden');
+  addForm.classList.add('collapsed');
   openFormBtn.classList.remove('hidden');
   showFormError(null);
 }
@@ -861,8 +1096,31 @@ document.getElementById('fileInput').addEventListener('change', function(e) {
   e.target.value = '';
 });
 
+document.getElementById('lockPinInput').addEventListener('input', function(e) {
+  var v = e.target.value;
+  if (v.length === 4) {
+    attemptUnlock(v, function(ok) {
+      if (ok) {
+        hideLockScreen();
+      } else {
+        document.getElementById('lockError').classList.remove('hidden');
+        e.target.value = '';
+      }
+    });
+  }
+});
+document.addEventListener('visibilitychange', checkRelock);
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('sw.js').catch(function(e) { console.warn('SW register failed', e); });
+  });
+}
+
+applyTheme(themeMode);
 load();
 render();
+if (isPinSet()) { showLockScreen(); }
 </script>
 </body>
 </html>
