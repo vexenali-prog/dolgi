@@ -29,6 +29,7 @@
   .balance .sub { font-size: 14px; margin-top: 6px; color: var(--sec); }
   .drip { color: var(--green); font-weight: 600; }
   .section { font-size: 13px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--sec); padding: 0 16px 7px; margin-top: 22px; }
+  .search-wrap { padding: 0 16px; margin-top: 18px; }
   .btn-filled {
     display: block; width: calc(100% - 32px); margin: 12px 16px 0; background: var(--blue); color: #fff;
     border: none; border-radius: 12px; padding: 13px; font-size: 16px; font-weight: 600; cursor: pointer;
@@ -37,7 +38,9 @@
   .btn-text.bold { font-weight: 600; }
   .btn-text.green { color: var(--green); }
   .btn-text.red { color: var(--red); }
+  .btn-text.orange { color: var(--orange); }
   .btn-text.sec { color: var(--sec); }
+  .pbtn { background: none; border: none; color: var(--ter); font-size: 13px; padding: 0 3px; cursor: pointer; }
   input {
     background: var(--inner); border: none; border-radius: 10px; color: var(--text);
     padding: 11px 12px; font-size: 17px; width: 100%; outline: none; -webkit-appearance: none;
@@ -55,7 +58,7 @@
   .err { color: var(--red); font-size: 14px; }
   .loan { padding: 13px 16px; }
   .loan + .loan { border-top: 0.5px solid var(--sep); }
-  .loan .top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
   .loan .name { font-size: 17px; font-weight: 600; }
   .loan .owed { font-size: 20px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .loan .status { font-size: 14px; margin-top: 3px; }
@@ -63,7 +66,8 @@
   .pay-line { font-size: 13px; display: flex; justify-content: space-between; padding: 2px 0; color: var(--sec); }
   .pay-line .val { color: var(--green); font-variant-numeric: tabular-nums; }
   .pay-line .item { color: var(--orange); }
-  .actions { display: flex; gap: 16px; margin-top: 6px; }
+  .pay-line-edit { padding: 4px 0; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 6px; }
   .empty { padding: 18px; color: var(--sec); font-size: 15px; }
   .closed-item { padding: 12px 16px; border-top: 0.5px solid var(--sep); }
   .footer { font-size: 12px; color: var(--ter); margin: 24px 16px 0; line-height: 1.5; }
@@ -113,6 +117,8 @@
     </div>
   </div>
 
+  <div class="search-wrap"><input id="searchInput" placeholder="Поиск по имени"></div>
+
   <div class="section">Активные</div>
   <div class="card" id="activeList"></div>
 
@@ -121,11 +127,19 @@
     <div class="card" id="closedList"></div>
   </div>
 
+  <div id="historyBlock" class="hidden">
+    <div class="section">История</div>
+    <div class="card" id="historyList"></div>
+  </div>
+
   <div class="section">Данные</div>
   <div class="card" style="padding:12px 16px">
     <div style="display:flex;gap:16px;flex-wrap:wrap">
       <button class="btn-text" id="backupBtn">Скопировать копию</button>
+      <button class="btn-text" id="downloadBtn">Скачать файл</button>
       <button class="btn-text" id="restoreToggleBtn">Восстановить</button>
+      <button class="btn-text" id="uploadBtn">Загрузить файл</button>
+      <input type="file" id="fileInput" accept=".json,application/json" class="hidden">
     </div>
     <div id="restoreArea" class="hidden" style="margin-top:10px">
       <textarea id="restoreText" placeholder="Вставь сюда сохранённую копию"></textarea>
@@ -137,22 +151,54 @@
     <div id="backupMsg" style="font-size:13px;color:var(--green);margin-top:6px" class="hidden"></div>
   </div>
 
-  <div class="footer">Данные хранятся на этом устройстве (localStorage). Иногда жми «Скопировать копию» и сохраняй текст в Заметки — на случай чистки Safari.</div>
+  <div class="footer">Данные хранятся на этом устройстве (localStorage). Иногда жми «Скопировать копию» или «Скачать файл» и сохраняй — на случай чистки Safari.</div>
 </div>
 
 <script>
 // ---------- math (verified 8/8 against the owner's examples) ----------
 function daysBetween(a, b) { return Math.round((Date.parse(b) - Date.parse(a)) / 86400000); }
 function paidSum(l) { return (l.payments || []).reduce(function(s, p) { return s + p.value; }, 0); }
+
+// day-index helpers for pause interval math (kept separate from daysBetween, which stays untouched)
+function dayIndex(ymd) { return Math.round(Date.parse(ymd) / 86400000); }
+function pausedDaysInRange(l, rangeStartYmd, rangeEndYmd) {
+  var from = dayIndex(rangeStartYmd), to = dayIndex(rangeEndYmd);
+  if (to <= from) return 0;
+  var sum = 0;
+  (l.pauses || []).forEach(function(p) {
+    var ps = dayIndex(p.start);
+    var pe = p.end ? dayIndex(p.end) : to;
+    var s = Math.max(ps, from), e = Math.min(pe, to);
+    if (e > s) sum += (e - s);
+  });
+  return sum;
+}
+function accruingDays(l, rangeStartYmd, t) {
+  return Math.max(0, daysBetween(rangeStartYmd, t) - pausedDaysInRange(l, rangeStartYmd, t));
+}
+function isPausedOn(l, ymd) {
+  var d = dayIndex(ymd);
+  return (l.pauses || []).some(function(p) {
+    var ps = dayIndex(p.start), pe = p.end ? dayIndex(p.end) : Infinity;
+    return d >= ps && d < pe;
+  });
+}
+function activePause(l) {
+  var pauses = l.pauses || [];
+  for (var i = pauses.length - 1; i >= 0; i--) if (pauses[i].end === null) return pauses[i];
+  return null;
+}
+
 function owedNow(l, t) {
   if (l.type === 'deadline') {
-    var over = Math.max(0, daysBetween(l.dueDate, t));
+    var over = accruingDays(l, l.dueDate, t);
     return l.returnAmount + over * l.dailyRate - paidSum(l);
   }
-  var days = Math.max(0, daysBetween(l.issueDate, t));
+  var days = accruingDays(l, l.issueDate, t);
   return l.principal + days * l.dailyRate - paidSum(l);
 }
 function dripPerDay(l, t) {
+  if (isPausedOn(l, t)) return 0;
   if (l.type === 'deadline') return daysBetween(l.dueDate, t) > 0 ? l.dailyRate : 0;
   return l.dailyRate;
 }
@@ -168,9 +214,15 @@ function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').
 var KEY = 'radmir-debts';
 var loans = [];
 var fType = 'deadline';
+var editingId = null;
 var payingId = null;
+var editingPaymentKey = null;
 var deleteArmId = null;
+var deleteArmPayKey = null;
+var armTimer = null;
 var showClosed = false;
+var showHistory = false;
+var searchQuery = '';
 
 function load() {
   try {
@@ -186,47 +238,94 @@ function save() {
   catch (e) { alert('Не удалось сохранить: ' + e.message); }
 }
 
+// ---------- search ----------
+function matchesSearch(l) {
+  var q = searchQuery.trim().toLowerCase();
+  return !q || l.name.toLowerCase().indexOf(q) !== -1;
+}
+
+// ---------- history log ----------
+function buildHistory(allLoans) {
+  var events = [];
+  allLoans.forEach(function(l) {
+    var name = esc(l.name);
+    events.push({ date: l.issueDate, order: 0, html: 'Записан долг «' + name + '» · ' + fmt(l.principal) + ' ₽' });
+    (l.payments || []).forEach(function(p) {
+      events.push({ date: p.date, order: 1, html: name + ' — выплата ' + fmt(p.value) + ' ₽' + (p.note ? ' (' + esc(p.note) + ')' : '') });
+    });
+    (l.pauses || []).forEach(function(p) {
+      events.push({ date: p.start, order: 2, html: name + ' — поставлен на паузу' });
+      if (p.end) events.push({ date: p.end, order: 3, html: name + ' — снят с паузы' });
+    });
+    if (l.closed) events.push({ date: l.closedDate, order: 4, html: name + ' — долг погашен' });
+  });
+  events.sort(function(a, b) {
+    if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+    return b.order - a.order;
+  });
+  return events;
+}
+
 // ---------- render ----------
 function statusInfo(l, t) {
+  var pausedNow = isPausedOn(l, t);
+  var rateSuffix = pausedNow ? ' · на паузе' : ' · +' + fmt(l.dailyRate) + ' ₽/день';
   if (l.type === 'deadline') {
     var over = daysBetween(l.dueDate, t);
-    if (over > 0) return { text: 'Просрочка ' + over + ' дн · +' + fmt(l.dailyRate) + ' ₽/день', color: 'var(--red)', overdue: true };
+    if (over > 0) return { text: 'Просрочка ' + over + ' дн' + rateSuffix, color: pausedNow ? 'var(--sec)' : 'var(--red)', overdue: !pausedNow };
     if (over === 0) return { text: 'Вернуть сегодня', color: 'var(--orange)', overdue: false };
     return { text: 'Вернуть до ' + fmtDate(l.dueDate), color: 'var(--sec)', overdue: false };
   }
   var days = Math.max(0, daysBetween(l.issueDate, t));
-  return { text: 'Капает ' + days + ' дн · +' + fmt(l.dailyRate) + ' ₽/день', color: 'var(--orange)', overdue: false };
+  return { text: 'Капает ' + days + ' дн' + rateSuffix, color: pausedNow ? 'var(--sec)' : 'var(--orange)', overdue: false };
 }
 
 function render() {
   var t = localToday();
-  var act = loans.filter(function(l) { return !l.closed; });
+  var allActive = loans.filter(function(l) { return !l.closed; });
+  var allClosed = loans.filter(function(l) { return l.closed; });
+  var act = allActive.filter(matchesSearch);
   act.sort(function(a, b) {
     var ao = a.type === 'deadline' && daysBetween(a.dueDate, t) > 0 ? 1 : 0;
     var bo = b.type === 'deadline' && daysBetween(b.dueDate, t) > 0 ? 1 : 0;
     if (ao !== bo) return bo - ao;
     return owedNow(b, t) - owedNow(a, t);
   });
-  var cls = loans.filter(function(l) { return l.closed; });
+  var cls = allClosed.filter(matchesSearch);
 
-  var total = act.reduce(function(s, l) { return s + Math.max(0, owedNow(l, t)); }, 0);
-  var drip = act.reduce(function(s, l) { return s + dripPerDay(l, t); }, 0);
+  var total = allActive.reduce(function(s, l) { return s + Math.max(0, owedNow(l, t)); }, 0);
+  var drip = allActive.reduce(function(s, l) { return s + dripPerDay(l, t); }, 0);
   document.getElementById('totalOwed').textContent = fmt(total) + ' ₽';
   document.getElementById('totalSub').innerHTML =
     (drip > 0 ? '<span class="drip">+' + fmt(drip) + ' ₽/день</span> · ' : '') +
-    act.length + ' активных' + (cls.length ? ' · ' + cls.length + ' закрыто' : '');
+    allActive.length + ' активных' + (allClosed.length ? ' · ' + allClosed.length + ' закрыто' : '');
 
   var box = document.getElementById('activeList');
   if (act.length === 0) {
-    box.innerHTML = '<div class="empty">Пока никто не должен.</div>';
+    box.innerHTML = '<div class="empty">' + (searchQuery.trim() ? 'Никого не найдено.' : 'Пока никто не должен.') + '</div>';
   } else {
     box.innerHTML = act.map(function(l) {
       var owed = Math.max(0, owedNow(l, t));
       var st = statusInfo(l, t);
       var pays = (l.payments || []).map(function(p) {
+        var payKey = l.id + ':' + p.id;
+        if (editingPaymentKey === payKey) {
+          return '<div class="pay-line-edit">' +
+            '<div class="row">' +
+            '<input type="number" inputmode="numeric" value="' + p.value + '" style="width:100px;flex-shrink:0" id="payEditValue">' +
+            '<input value="' + esc(p.note || '') + '" placeholder="Чем? (пусто = деньги)" id="payEditNote">' +
+            '</div>' +
+            '<div style="display:flex;gap:14px;margin-top:4px">' +
+            '<button class="btn-text bold" data-act="paymentsave" data-id="' + l.id + '" data-pid="' + p.id + '">Сохранить</button>' +
+            '<button class="btn-text sec" data-act="paymenteditcancel">Отмена</button>' +
+            '</div></div>';
+        }
         return '<div class="pay-line"><span>' + fmtDate(p.date) + ' · ' +
           (p.note ? '<span class="item">' + esc(p.note) + '</span>' : 'деньгами') +
-          '</span><span class="val">−' + fmt(p.value) + ' ₽</span></div>';
+          '</span><span class="val">−' + fmt(p.value) + ' ₽ ' +
+          '<button class="pbtn" data-act="paymentedit" data-id="' + l.id + '" data-pid="' + p.id + '">✎</button>' +
+          '<button class="pbtn" data-act="paymentdel" data-id="' + l.id + '" data-pid="' + p.id + '">' + (deleteArmPayKey === payKey ? '?' : '✕') + '</button>' +
+          '</span></div>';
       }).join('');
       var actions;
       if (payingId === l.id) {
@@ -241,10 +340,15 @@ function render() {
           '<button class="btn-text sec" data-act="paycancel">Отмена</button>' +
           '</div></div>';
       } else {
+        var isPausedState = !!activePause(l);
         actions =
           '<div class="actions">' +
           '<button class="btn-text bold" data-act="pay" data-id="' + l.id + '">Выплата</button>' +
           '<button class="btn-text green bold" data-act="close" data-id="' + l.id + '">Погасил</button>' +
+          '<button class="btn-text" data-act="editloan" data-id="' + l.id + '">Изменить</button>' +
+          (isPausedState
+            ? '<button class="btn-text" data-act="resumeloan" data-id="' + l.id + '">Возобновить</button>'
+            : '<button class="btn-text orange" data-act="pauseloan" data-id="' + l.id + '">Пауза</button>') +
           '<button class="btn-text red" data-act="del" data-id="' + l.id + '">' + (deleteArmId === l.id ? 'Точно удалить?' : 'Удалить') + '</button>' +
           '</div>';
       }
@@ -279,6 +383,21 @@ function render() {
     }).join('');
     cList.innerHTML = head + rows;
   }
+
+  var hBlock = document.getElementById('historyBlock');
+  var hList = document.getElementById('historyList');
+  if (loans.length === 0) {
+    hBlock.classList.add('hidden');
+  } else {
+    hBlock.classList.remove('hidden');
+    var hHead = '<div style="padding:4px 16px"><button class="btn-text" data-act="togglehistory">' +
+      (showHistory ? 'Скрыть' : 'Показать') + '</button></div>';
+    var hRows = !showHistory ? '' : buildHistory(loans).map(function(ev) {
+      return '<div class="closed-item"><div class="top"><span style="font-size:14px">' + ev.html + '</span>' +
+        '<span style="font-size:13px;color:var(--ter);white-space:nowrap">' + fmtDate(ev.date) + '</span></div></div>';
+    }).join('');
+    hList.innerHTML = hHead + hRows;
+  }
 }
 
 // ---------- actions ----------
@@ -287,8 +406,15 @@ document.addEventListener('click', function(e) {
   if (!btn) return;
   var act = btn.getAttribute('data-act');
   var id = btn.getAttribute('data-id');
-  if (act === 'pay') { payingId = id; deleteArmId = null; render(); }
-  if (act === 'paycancel') { payingId = null; render(); }
+  var pid = btn.getAttribute('data-pid');
+  var payKey = pid ? id + ':' + pid : null;
+
+  clearTimeout(armTimer);
+  if (act !== 'del') deleteArmId = null;
+  if (act !== 'paymentdel') deleteArmPayKey = null;
+
+  if (act === 'pay') { payingId = id; editingPaymentKey = null; render(); return; }
+  if (act === 'paycancel') { payingId = null; render(); return; }
   if (act === 'paydo') {
     var v = parseFloat(document.getElementById('payValue').value);
     var note = (document.getElementById('payNote').value || '').trim();
@@ -301,32 +427,127 @@ document.addEventListener('click', function(e) {
       });
       payingId = null; save(); render();
     }
+    return;
   }
   if (act === 'close') {
     loans = loans.map(function(l) { return l.id === id ? Object.assign({}, l, { closed: true, closedDate: localToday() }) : l; });
     save(); render();
+    return;
   }
   if (act === 'del') {
-    if (deleteArmId !== id) { deleteArmId = id; render(); return; }
+    if (deleteArmId !== id) {
+      deleteArmId = id;
+      armTimer = setTimeout(function() { deleteArmId = null; render(); }, 3000);
+      render();
+      return;
+    }
     loans = loans.filter(function(l) { return l.id !== id; });
     deleteArmId = null; save(); render();
+    return;
   }
-  if (act === 'toggleclosed') { showClosed = !showClosed; render(); }
+  if (act === 'toggleclosed') { showClosed = !showClosed; render(); return; }
+  if (act === 'togglehistory') { showHistory = !showHistory; render(); return; }
+
+  if (act === 'editloan') {
+    var loan = loans.find(function(l) { return l.id === id; });
+    if (loan) openEditForm(loan);
+    return;
+  }
+  if (act === 'pauseloan') {
+    loans = loans.map(function(l) {
+      if (l.id !== id) return l;
+      var pauses = (l.pauses || []).slice();
+      pauses.push({ id: String(Date.now()), start: localToday(), end: null });
+      return Object.assign({}, l, { pauses: pauses });
+    });
+    save(); render();
+    return;
+  }
+  if (act === 'resumeloan') {
+    loans = loans.map(function(l) {
+      if (l.id !== id) return l;
+      var pauses = (l.pauses || []).map(function(p) { return p.end === null ? Object.assign({}, p, { end: localToday() }) : p; });
+      return Object.assign({}, l, { pauses: pauses });
+    });
+    save(); render();
+    return;
+  }
+
+  if (act === 'paymentedit') { editingPaymentKey = payKey; payingId = null; render(); return; }
+  if (act === 'paymenteditcancel') { editingPaymentKey = null; render(); return; }
+  if (act === 'paymentsave') {
+    var pv = parseFloat(document.getElementById('payEditValue').value);
+    var pn = (document.getElementById('payEditNote').value || '').trim();
+    if (isFinite(pv) && pv > 0) {
+      loans = loans.map(function(l) {
+        if (l.id !== id) return l;
+        var pays = (l.payments || []).map(function(p) { return p.id === pid ? Object.assign({}, p, { value: pv, note: pn }) : p; });
+        return Object.assign({}, l, { payments: pays });
+      });
+      editingPaymentKey = null; save(); render();
+    }
+    return;
+  }
+  if (act === 'paymentdel') {
+    if (deleteArmPayKey !== payKey) {
+      deleteArmPayKey = payKey;
+      armTimer = setTimeout(function() { deleteArmPayKey = null; render(); }, 3000);
+      render();
+      return;
+    }
+    loans = loans.map(function(l) {
+      if (l.id !== id) return l;
+      var pays = (l.payments || []).filter(function(p) { return p.id !== pid; });
+      return Object.assign({}, l, { payments: pays });
+    });
+    deleteArmPayKey = null; save(); render();
+    return;
+  }
+});
+
+document.getElementById('searchInput').addEventListener('input', function(e) {
+  searchQuery = e.target.value;
+  render();
 });
 
 // form
 var openFormBtn = document.getElementById('openFormBtn');
 var addForm = document.getElementById('addForm');
-openFormBtn.addEventListener('click', function() {
+function fillFormFields(loan) {
+  document.getElementById('fName').value = loan ? loan.name : '';
+  document.getElementById('fPrincipal').value = loan ? loan.principal : '';
+  document.getElementById('fIssue').value = loan ? loan.issueDate : localToday();
+  setType(loan ? loan.type : 'deadline');
+  document.getElementById('fReturn').value = loan && loan.type === 'deadline' ? loan.returnAmount : '';
+  document.getElementById('fDue').value = loan && loan.type === 'deadline' ? loan.dueDate : '';
+  document.getElementById('fRateD').value = loan && loan.type === 'deadline' ? loan.dailyRate : 500;
+  document.getElementById('fRate').value = loan && loan.type === 'daily' ? loan.dailyRate : 500;
+}
+function openAddForm() {
+  editingId = null;
+  fillFormFields(null);
+  document.getElementById('saveLoanBtn').textContent = 'Записать';
+  showFormError(null);
   addForm.classList.remove('hidden');
   openFormBtn.classList.add('hidden');
-  document.getElementById('fIssue').value = localToday();
-});
-document.getElementById('cancelFormBtn').addEventListener('click', function() {
+}
+function openEditForm(loan) {
+  editingId = loan.id;
+  fillFormFields(loan);
+  document.getElementById('saveLoanBtn').textContent = 'Сохранить';
+  showFormError(null);
+  addForm.classList.remove('hidden');
+  openFormBtn.classList.add('hidden');
+  addForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function closeForm() {
+  editingId = null;
   addForm.classList.add('hidden');
   openFormBtn.classList.remove('hidden');
   showFormError(null);
-});
+}
+openFormBtn.addEventListener('click', openAddForm);
+document.getElementById('cancelFormBtn').addEventListener('click', closeForm);
 document.getElementById('segDeadline').addEventListener('click', function() { setType('deadline'); });
 document.getElementById('segDaily').addEventListener('click', function() { setType('daily'); });
 function setType(t) {
@@ -347,35 +568,47 @@ document.getElementById('saveLoanBtn').addEventListener('click', function() {
   var issue = document.getElementById('fIssue').value || localToday();
   if (!name) return showFormError('Впиши имя');
   if (!isFinite(principal) || principal <= 0) return showFormError('Сумма — число больше нуля');
-  var loan = { id: String(Date.now()), name: name, principal: principal, issueDate: issue, payments: [], closed: false, type: fType };
+  var patch = { name: name, principal: principal, issueDate: issue, type: fType };
   if (fType === 'deadline') {
     var ret = parseFloat(document.getElementById('fReturn').value);
     var due = document.getElementById('fDue').value;
     var rate = parseFloat(document.getElementById('fRateD').value);
     if (!isFinite(ret) || ret <= 0) return showFormError('Сумма возврата — число больше нуля');
     if (!due) return showFormError('Укажи дату возврата');
+    if (due < issue) return showFormError('Дата возврата раньше даты выдачи');
     if (!isFinite(rate) || rate < 0) return showFormError('₽/день — число (можно 0)');
-    loan.returnAmount = ret; loan.dueDate = due; loan.dailyRate = rate;
+    patch.returnAmount = ret; patch.dueDate = due; patch.dailyRate = rate;
   } else {
     var rate2 = parseFloat(document.getElementById('fRate').value);
     if (!isFinite(rate2) || rate2 < 0) return showFormError('₽/день — число (можно 0)');
-    loan.dailyRate = rate2;
+    patch.dailyRate = rate2;
   }
-  loans.unshift(loan);
+  if (editingId) {
+    loans = loans.map(function(l) { return l.id === editingId ? Object.assign({}, l, patch) : l; });
+  } else {
+    loans.unshift(Object.assign({ id: String(Date.now()), payments: [], closed: false, pauses: [] }, patch));
+  }
   save();
-  document.getElementById('fName').value = '';
-  document.getElementById('fPrincipal').value = '';
-  document.getElementById('fReturn').value = '';
-  document.getElementById('fDue').value = '';
-  showFormError(null);
-  addForm.classList.add('hidden');
-  openFormBtn.classList.remove('hidden');
+  closeForm();
   render();
 });
 
 // backup / restore
+function serializeData() { return JSON.stringify({ loans: loans }); }
+function applyRestoredData(rawText) {
+  try {
+    var parsed = JSON.parse(rawText);
+    if (!Array.isArray(parsed.loans)) throw new Error('нет поля loans');
+    loans = parsed.loans;
+    save(); render();
+    return true;
+  } catch (e) {
+    alert('Не похоже на копию: ' + e.message);
+    return false;
+  }
+}
 document.getElementById('backupBtn').addEventListener('click', function() {
-  var data = JSON.stringify({ loans: loans });
+  var data = serializeData();
   var msg = document.getElementById('backupMsg');
   function ok() { msg.textContent = 'Скопировано — вставь в Заметки'; msg.classList.remove('hidden'); setTimeout(function(){ msg.classList.add('hidden'); }, 3000); }
   if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -384,6 +617,17 @@ document.getElementById('backupBtn').addEventListener('click', function() {
     prompt('Скопируй вручную:', data);
   }
 });
+document.getElementById('downloadBtn').addEventListener('click', function() {
+  var blob = new Blob([serializeData()], { type: 'application/json' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'dolgi-' + localToday() + '.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+});
 document.getElementById('restoreToggleBtn').addEventListener('click', function() {
   document.getElementById('restoreArea').classList.toggle('hidden');
 });
@@ -391,16 +635,22 @@ document.getElementById('restoreCancelBtn').addEventListener('click', function()
   document.getElementById('restoreArea').classList.add('hidden');
 });
 document.getElementById('restoreApplyBtn').addEventListener('click', function() {
-  try {
-    var parsed = JSON.parse(document.getElementById('restoreText').value);
-    if (!Array.isArray(parsed.loans)) throw new Error('нет поля loans');
-    loans = parsed.loans;
-    save(); render();
+  var ok = applyRestoredData(document.getElementById('restoreText').value);
+  if (ok) {
     document.getElementById('restoreArea').classList.add('hidden');
     document.getElementById('restoreText').value = '';
-  } catch (e) {
-    alert('Не похоже на копию: ' + e.message);
   }
+});
+document.getElementById('uploadBtn').addEventListener('click', function() {
+  document.getElementById('fileInput').click();
+});
+document.getElementById('fileInput').addEventListener('change', function(e) {
+  var file = e.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function() { applyRestoredData(String(reader.result)); };
+  reader.readAsText(file);
+  e.target.value = '';
 });
 
 load();
