@@ -160,8 +160,8 @@
     <div class="grid">
       <input id="fName" placeholder="Кому дал">
       <div class="row">
-        <input id="fPrincipal" type="number" inputmode="numeric" placeholder="Сумма, ₽">
-        <input id="fIssue" type="date">
+        <input id="fPrincipal" type="text" inputmode="numeric" class="money-input" placeholder="Сумма, ₽">
+        <input id="fIssue" type="text" inputmode="numeric" placeholder="ДД.ММ.ГГГГ">
       </div>
       <div class="seg">
         <button type="button" id="segDeadline" class="on">К сроку</button>
@@ -169,13 +169,13 @@
       </div>
       <div class="grid" id="deadlineFields">
         <div class="row">
-          <input id="fReturn" type="number" inputmode="numeric" placeholder="Вернуть, ₽">
-          <input id="fDue" type="date">
+          <input id="fReturn" type="text" inputmode="numeric" class="money-input" placeholder="Вернуть, ₽">
+          <input id="fDue" type="text" inputmode="numeric" placeholder="ДД.ММ.ГГГГ">
         </div>
-        <input id="fRateD" type="number" inputmode="numeric" placeholder="₽/день после срока" value="500">
+        <input id="fRateD" type="text" inputmode="numeric" class="money-input" placeholder="₽/день после срока" value="500">
       </div>
       <div class="grid hidden" id="dailyFields">
-        <input id="fRate" type="number" inputmode="numeric" placeholder="₽/день со следующего дня" value="500">
+        <input id="fRate" type="text" inputmode="numeric" class="money-input" placeholder="₽/день со следующего дня" value="500">
       </div>
       <div class="err hidden" id="formError"></div>
       <button class="btn-filled" style="margin:0;width:100%" id="saveLoanBtn">Записать</button>
@@ -302,7 +302,26 @@ function localToday() {
   return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
 }
 function fmt(n) { return Math.round(n).toLocaleString('ru-RU'); }
+function groupDigits(digits) { return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
+function formatMoneyValue(n) {
+  if (n === '' || n === null || n === undefined || isNaN(n)) return '';
+  return groupDigits(String(Math.round(Number(n))));
+}
+function parseMoneyInput(id) {
+  var raw = document.getElementById(id).value || '';
+  return parseFloat(raw.replace(/\./g, ''));
+}
 function fmtDate(ymd) { if (!ymd) return ''; var p = ymd.split('-'); return p[2] + '.' + p[1]; }
+function fmtDateInput(ymd) { if (!ymd) return ''; var p = ymd.split('-'); return p[2] + '.' + p[1] + '.' + p[0]; }
+function parseRuDate(text) {
+  var m = (text || '').trim().match(/^(\d{1,2})\.(\d{1,2})(?:\.(\d{2,4}))?$/);
+  if (!m) return null;
+  var day = parseInt(m[1], 10), month = parseInt(m[2], 10);
+  var year = m[3] ? (m[3].length === 2 ? 2000 + parseInt(m[3], 10) : parseInt(m[3], 10)) : new Date().getFullYear();
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  var p2 = function(n) { return String(n).padStart(2, '0'); };
+  return year + '-' + p2(month) + '-' + p2(day);
+}
 function fmtMonth(ym) {
   var names = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
   var p = ym.split('-');
@@ -428,12 +447,16 @@ function hideLockScreen() {
   unlocked = true;
   document.getElementById('lockScreen').classList.add('hidden');
 }
+var PIN_GRACE_MS = 30000;
+var lastHiddenAt = null;
 function checkRelock() {
   if (!isPinSet()) return;
   if (document.visibilityState === 'hidden') {
-    unlocked = false;
-  } else if (document.visibilityState === 'visible' && !unlocked) {
-    showLockScreen();
+    lastHiddenAt = Date.now();
+  } else if (document.visibilityState === 'visible' && lastHiddenAt !== null) {
+    var elapsed = Date.now() - lastHiddenAt;
+    lastHiddenAt = null;
+    if (elapsed > PIN_GRACE_MS) showLockScreen();
   }
 }
 
@@ -658,7 +681,7 @@ function render() {
         if (editingPaymentKey === payKey) {
           return '<div class="pay-line-edit">' +
             '<div class="row">' +
-            '<input type="number" inputmode="numeric" value="' + p.value + '" style="width:100px;flex-shrink:0" id="payEditValue">' +
+            '<input type="text" inputmode="numeric" class="money-input" value="' + formatMoneyValue(p.value) + '" style="width:100px;flex-shrink:0" id="payEditValue">' +
             '<input value="' + esc(p.note || '') + '" placeholder="Чем? (пусто = деньги)" id="payEditNote">' +
             '</div>' +
             '<div style="display:flex;gap:14px;margin-top:4px">' +
@@ -678,7 +701,7 @@ function render() {
         actions =
           '<div class="grid" style="margin-top:10px">' +
           '<div class="row">' +
-          '<input type="number" inputmode="numeric" placeholder="Сумма" style="width:120px;flex-shrink:0" id="payValue" autofocus>' +
+          '<input type="text" inputmode="numeric" class="money-input" placeholder="Сумма" style="width:120px;flex-shrink:0" id="payValue" autofocus>' +
           '<input placeholder="Чем? (пусто = деньги)" id="payNote">' +
           '</div>' +
           '<div style="display:flex;gap:14px">' +
@@ -789,7 +812,7 @@ document.addEventListener('click', function(e) {
   if (act === 'pay') { payingId = id; editingPaymentKey = null; render(); return; }
   if (act === 'paycancel') { payingId = null; render(); return; }
   if (act === 'paydo') {
-    var v = parseFloat(document.getElementById('payValue').value);
+    var v = parseMoneyInput('payValue');
     var note = (document.getElementById('payNote').value || '').trim();
     if (isFinite(v) && v > 0) {
       loans = loans.map(function(l) {
@@ -901,7 +924,7 @@ document.addEventListener('click', function(e) {
   if (act === 'paymentedit') { editingPaymentKey = payKey; payingId = null; render(); return; }
   if (act === 'paymenteditcancel') { editingPaymentKey = null; render(); return; }
   if (act === 'paymentsave') {
-    var pv = parseFloat(document.getElementById('payEditValue').value);
+    var pv = parseMoneyInput('payEditValue');
     var pn = (document.getElementById('payEditNote').value || '').trim();
     if (isFinite(pv) && pv > 0) {
       loans = loans.map(function(l) {
@@ -953,18 +976,25 @@ document.getElementById('searchInput').addEventListener('input', function(e) {
   render();
 });
 
+document.addEventListener('input', function(e) {
+  if (e.target.classList && e.target.classList.contains('money-input')) {
+    var digits = e.target.value.replace(/\D/g, '');
+    e.target.value = groupDigits(digits);
+  }
+});
+
 // form
 var openFormBtn = document.getElementById('openFormBtn');
 var addForm = document.getElementById('addForm');
 function fillFormFields(loan) {
   document.getElementById('fName').value = loan ? loan.name : '';
-  document.getElementById('fPrincipal').value = loan ? loan.principal : '';
-  document.getElementById('fIssue').value = loan ? loan.issueDate : localToday();
+  document.getElementById('fPrincipal').value = loan ? formatMoneyValue(loan.principal) : '';
+  document.getElementById('fIssue').value = fmtDateInput(loan ? loan.issueDate : localToday());
   setType(loan ? loan.type : 'deadline');
-  document.getElementById('fReturn').value = loan && loan.type === 'deadline' ? loan.returnAmount : '';
-  document.getElementById('fDue').value = loan && loan.type === 'deadline' ? loan.dueDate : '';
-  document.getElementById('fRateD').value = loan && loan.type === 'deadline' ? loan.dailyRate : 500;
-  document.getElementById('fRate').value = loan && loan.type === 'daily' ? loan.dailyRate : 500;
+  document.getElementById('fReturn').value = loan && loan.type === 'deadline' ? formatMoneyValue(loan.returnAmount) : '';
+  document.getElementById('fDue').value = loan && loan.type === 'deadline' ? fmtDateInput(loan.dueDate) : '';
+  document.getElementById('fRateD').value = loan && loan.type === 'deadline' ? formatMoneyValue(loan.dailyRate) : '500';
+  document.getElementById('fRate').value = loan && loan.type === 'daily' ? formatMoneyValue(loan.dailyRate) : '500';
 }
 function openAddForm() {
   editingId = null;
@@ -1007,22 +1037,26 @@ function showFormError(msg) {
 }
 document.getElementById('saveLoanBtn').addEventListener('click', function() {
   var name = document.getElementById('fName').value.trim();
-  var principal = parseFloat(document.getElementById('fPrincipal').value);
-  var issue = document.getElementById('fIssue').value || localToday();
+  var principal = parseMoneyInput('fPrincipal');
+  var issueRaw = document.getElementById('fIssue').value.trim();
+  var issue = issueRaw ? parseRuDate(issueRaw) : localToday();
   if (!name) return showFormError('Впиши имя');
+  if (issueRaw && !issue) return showFormError('Дата выдачи — в формате ДД.ММ или ДД.ММ.ГГГГ');
   if (!isFinite(principal) || principal <= 0) return showFormError('Сумма — число больше нуля');
   var patch = { name: name, principal: principal, issueDate: issue, type: fType };
   if (fType === 'deadline') {
-    var ret = parseFloat(document.getElementById('fReturn').value);
-    var due = document.getElementById('fDue').value;
-    var rate = parseFloat(document.getElementById('fRateD').value);
+    var ret = parseMoneyInput('fReturn');
+    var dueRaw = document.getElementById('fDue').value.trim();
+    var due = parseRuDate(dueRaw);
+    var rate = parseMoneyInput('fRateD');
     if (!isFinite(ret) || ret <= 0) return showFormError('Сумма возврата — число больше нуля');
-    if (!due) return showFormError('Укажи дату возврата');
+    if (!dueRaw) return showFormError('Укажи дату возврата');
+    if (!due) return showFormError('Дата возврата — в формате ДД.ММ или ДД.ММ.ГГГГ');
     if (due < issue) return showFormError('Дата возврата раньше даты выдачи');
     if (!isFinite(rate) || rate < 0) return showFormError('₽/день — число (можно 0)');
     patch.returnAmount = ret; patch.dueDate = due; patch.dailyRate = rate;
   } else {
-    var rate2 = parseFloat(document.getElementById('fRate').value);
+    var rate2 = parseMoneyInput('fRate');
     if (!isFinite(rate2) || rate2 < 0) return showFormError('₽/день — число (можно 0)');
     patch.dailyRate = rate2;
   }
