@@ -161,7 +161,7 @@
       <input id="fName" placeholder="Кому дал">
       <div class="row">
         <input id="fPrincipal" type="text" inputmode="numeric" class="money-input" placeholder="Сумма, ₽">
-        <input id="fIssue" type="text" inputmode="numeric" placeholder="ДД.ММ.ГГГГ">
+        <input id="fIssue" type="text" inputmode="numeric" autocomplete="off" class="date-input" placeholder="ДД.ММ.ГГГГ">
       </div>
       <div class="seg">
         <button type="button" id="segDeadline" class="on">К сроку</button>
@@ -170,7 +170,7 @@
       <div class="grid" id="deadlineFields">
         <div class="row">
           <input id="fReturn" type="text" inputmode="numeric" class="money-input" placeholder="Вернуть, ₽">
-          <input id="fDue" type="text" inputmode="numeric" placeholder="ДД.ММ.ГГГГ">
+          <input id="fDue" type="text" inputmode="numeric" autocomplete="off" class="date-input" placeholder="ДД.ММ.ГГГГ">
         </div>
         <input id="fRateD" type="text" inputmode="numeric" class="money-input" placeholder="₽/день после срока" value="500">
       </div>
@@ -313,6 +313,12 @@ function parseMoneyInput(id) {
 }
 function fmtDate(ymd) { if (!ymd) return ''; var p = ymd.split('-'); return p[2] + '.' + p[1]; }
 function fmtDateInput(ymd) { if (!ymd) return ''; var p = ymd.split('-'); return p[2] + '.' + p[1] + '.' + p[0]; }
+function formatDateDigits(digits) {
+  digits = digits.slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return digits.slice(0, 2) + '.' + digits.slice(2);
+  return digits.slice(0, 2) + '.' + digits.slice(2, 4) + '.' + digits.slice(4);
+}
 function parseRuDate(text) {
   var m = (text || '').trim().match(/^(\d{1,2})\.(\d{1,2})(?:\.(\d{2,4}))?$/);
   if (!m) return null;
@@ -980,6 +986,12 @@ document.addEventListener('input', function(e) {
   if (e.target.classList && e.target.classList.contains('money-input')) {
     var digits = e.target.value.replace(/\D/g, '');
     e.target.value = groupDigits(digits);
+    e.target.setSelectionRange(e.target.value.length, e.target.value.length);
+  }
+  if (e.target.classList && e.target.classList.contains('date-input')) {
+    var ddigits = e.target.value.replace(/\D/g, '');
+    e.target.value = formatDateDigits(ddigits);
+    e.target.setSelectionRange(e.target.value.length, e.target.value.length);
   }
 });
 
